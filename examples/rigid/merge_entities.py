@@ -13,7 +13,7 @@ COMB = {
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-v", "--vis", action="store_true", default=False)
+    parser.add_argument("-v", "--vis", action="store_true", default=True)
     parser.add_argument("-c", "--comb", type=str, default="urdf2urdf", choices=COMB)
     args = parser.parse_args()
 
