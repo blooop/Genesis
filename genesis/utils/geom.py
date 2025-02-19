@@ -306,10 +306,10 @@ def orthogonals2(a):
 
 
 @ti.func
-def imp_aref(params, pos, vel):
+def imp_aref(params, neg_penetration, vel, pos):
     # The first term in parms is the timeconst parsed from mjcf. However, we don't use it here but use the one passed in, which is 2*substep_dt.
     timeconst, dampratio, dmin, dmax, width, mid, power = params
-    imp_x = ti.abs(pos) / width
+    imp_x = ti.abs(neg_penetration) / width
     imp_a = (1.0 / mid ** (power - 1)) * imp_x**power
     imp_b = 1 - (1.0 / (1 - mid) ** (power - 1)) * (1 - imp_x) ** power
     imp_y = imp_a if imp_x < mid else imp_b
@@ -563,10 +563,10 @@ def quat_to_T(quat):
     if isinstance(quat, torch.Tensor):
         T = torch.eye(4, dtype=quat.dtype, device=quat.device)
         if quat.ndim == 1:
-            T[:3, :3] = Rotation.from_quat(wxyz_to_xyzw(quat)).as_matrix()
+            T[:3, :3] = quat_to_R(quat)
         elif quat.ndim == 2:
             T = T.unsqueeze(0).repeat(quat.shape[0], 1, 1)
-            T[:, :3, :3] = Rotation.from_quat(wxyz_to_xyzw(quat)).as_matrix()
+            T[:, :3, :3] = quat_to_R(quat)
         else:
             gs.raise_exception(f"ndim expected to be 1 or 2, but got {quat.ndim=}")
         return T
