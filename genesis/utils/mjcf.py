@@ -18,7 +18,7 @@ def parse_mjcf(path):
     return mj
 
 
-def parse_link(mj, i_l, q_offset, dof_offset, scale):
+def parse_link(mj, i_l, q_offset, dof_offset, qpos0_offset, scale):
 
     # mj.body
     l_info = dict()
@@ -66,12 +66,16 @@ def parse_link(mj, i_l, q_offset, dof_offset, scale):
 
     def add_more_joint_info(j_info, jnt_offset=0):
         d_off = dof_offset + jnt_offset
-        q_off = q_offset + jnt_offset
+        qpos0_off = qpos0_offset + jnt_offset
 
         j_info["dofs_damping"] = np.array(mj.dof_damping[d_off : d_off + j_info["n_dofs"]])
         j_info["dofs_invweight"] = np.array(mj.dof_invweight0[d_off : d_off + j_info["n_dofs"]])
         j_info["dofs_armature"] = np.array(mj.dof_armature[d_off : d_off + j_info["n_dofs"]])
-        j_info["init_qpos"] = np.array(mj.qpos0[q_off : q_off + j_info["n_qs"]])
+        if j_info["n_qpos0"] == 4 and j_info["type"] == gs.JOINT_TYPE.SPHERICAL:
+            # this is a real mujoco ball joint
+            j_info["init_qpos"] = gu.quat_to_xyz(mj.qpos0[qpos0_off : qpos0_off + 4])
+        else:
+            j_info["init_qpos"] = np.array(mj.qpos0[qpos0_off : qpos0_off + j_info["n_qpos0"]])
 
         # apply scale
         j_info["pos"] *= scale
@@ -95,6 +99,8 @@ def parse_link(mj, i_l, q_offset, dof_offset, scale):
         j_info["quat"] = np.array([1.0, 0.0, 0.0, 0.0])
         j_info["n_qs"] = 0
         j_info["n_dofs"] = 0
+        j_info["n_qpos0"] = 0
+
         j_info = add_more_joint_info(add_actuator(j_info))
         final_joint_list.append(j_info)
     else:
@@ -196,6 +202,13 @@ def parse_link(mj, i_l, q_offset, dof_offset, scale):
         elif j_info["n_dofs"] == 6:
             j_info["type"] = gs.JOINT_TYPE.FREE
 
+        j_info["n_qpos0"] = j_info["n_qs"]
+        if j_info["type"] == gs.JOINT_TYPE.SPHERICAL and len(j_info_list) == 1:
+            # for real ball joint, mujoco uses quaternion for qpos0
+            # however, we could merge multiple hinge joints into a single ball joint
+            # in this case, we need to use xyz for qpos0
+            j_info["n_qpos0"] = 4
+
         j_info["quat"] = j_info_list[0]["quat"]
         j_info["pos"] = j_info_list[0]["pos"]
         j_info["name"] = j_info_list[0]["name"]
@@ -272,7 +285,7 @@ def parse_geom(mj, i_g, scale, convexify, surface, xml_path):
             tex_id = tex_id_RGB if tex_id_RGB >= 0 else tex_id_RGBA
             if tex_id >= 0:
                 mj_tex = mj.tex(tex_id)
-                assert mj_tex.type == mujoco.mjtTexture.mjTEXTURE_2D
+                # assert mj_tex.type == mujoco.mjtTexture.mjTEXTURE_2D
                 uv_coordinates = tmesh.vertices[:, :2].copy()
                 uv_coordinates -= uv_coordinates.min(axis=0)
                 uv_coordinates /= uv_coordinates.max(axis=0)
@@ -307,23 +320,22 @@ def parse_geom(mj, i_g, scale, convexify, surface, xml_path):
                 mj_tex = mj.tex(tex_id)
                 tex_vert_start = int(mj.mesh_texcoordadr[mj_mesh.id])
                 num_tex_vert = int(mj.mesh_texcoordnum[mj_mesh.id])
+                if tex_vert_start != -1:  # -1 means no texcoord
+                    vertices = np.zeros((num_tex_vert, 3))
+                    faces = mj.mesh_facetexcoord[face_start:face_end]
+                    for face_id in range(face_start, face_end):
+                        for i in range(3):
+                            mesh_vert_id = mj.mesh_face[face_id, i]
+                            tex_vert_id = mj.mesh_facetexcoord[face_id, i]
+                            vertices[tex_vert_id] = mj.mesh_vert[mesh_vert_id + vert_start]
 
-                faces = mj.mesh_facetexcoord[face_start:face_end]
+                    uv = mj.mesh_texcoord[tex_vert_start : tex_vert_start + num_tex_vert]
+                    uv[:, 1] = 1 - uv[:, 1]
 
-                vertices = np.zeros((num_tex_vert, 3))
-                for face_id in range(face_start, face_end):
-                    for i in range(3):
-                        mesh_vert_id = mj.mesh_face[face_id, i]
-                        tex_vert_id = mj.mesh_facetexcoord[face_id, i]
-                        vertices[tex_vert_id] = mj.mesh_vert[mesh_vert_id + vert_start]
-
-                uv = mj.mesh_texcoord[tex_vert_start : tex_vert_start + num_tex_vert]
-                uv[:, 1] = 1 - uv[:, 1]
-
-                H, W, C = mj_tex.height[0], mj_tex.width[0], mj_tex.nchannel[0]
-                image_array = mj.tex_data[mj_tex.adr[0] : mj_tex.adr[0] + H * W * C].reshape(H, W, C)
-                uv = uv * mj_mat.texrepeat
-                visual = TextureVisuals(uv=uv, image=Image.fromarray(image_array))
+                    H, W, C = mj_tex.height[0], mj_tex.width[0], mj_tex.nchannel[0]
+                    image_array = mj.tex_data[mj_tex.adr[0] : mj_tex.adr[0] + H * W * C].reshape(H, W, C)
+                    uv = uv * mj_mat.texrepeat
+                    visual = TextureVisuals(uv=uv, image=Image.fromarray(image_array))
 
         tmesh = trimesh.Trimesh(
             vertices=vertices,
