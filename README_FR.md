@@ -69,7 +69,7 @@ Page du projet : <https://genesis-embodied-ai.github.io/>
 Genesis est disponible via PyPI :
 
 ```bash
-pip install genesis-world  # Nécessite Python>=3.10,<3.10;
+pip install genesis-world  # Nécessite Python>=3.10,<3.13;
 ```
 
 Vous devez également installer **PyTorch** en suivant [les instructions officielles](https://pytorch.org/get-started/locally/).
@@ -102,6 +102,7 @@ xhost +local:root # Autoriser le conteneur à accéder à l'affichage
 
 docker run --gpus all --rm -it \
 -e DISPLAY=$DISPLAY \
+-v /dev/dri:/dev/dri \
 -v /tmp/.X11-unix/:/tmp/.X11-unix \
 -v $PWD:/workspace \
 genesis
@@ -173,9 +174,9 @@ Genesis est un projet à grande échelle qui intègre des technologies de pointe
 Si vous utilisez Genesis dans vos recherches, veuillez envisager de citer :
 
 ```bibtex
-@software{Genesis,
+@misc{Genesis,
   author = {Genesis Authors},
-  title = {Genesis: A Universal and Generative Physics Engine for Robotics and Beyond},
+  title = {Genesis: A Generative and Universal Physics Engine for Robotics and Beyond},
   month = {December},
   year = {2024},
   url = {https://github.com/Genesis-Embodied-AI/Genesis}

@@ -16,6 +16,25 @@ These are independent of backend solver type and are shared by different solvers
 """
 
 
+class TetGenMixin(Options):
+    """
+    A mixin to introduce TetGen-related options into morph classes that support tetrahedralization using TetGen.
+    """
+
+    # FEM specific
+    order: int = 1
+
+    # Volumetric mesh entity
+    mindihedral: int = 10
+    minratio: float = 1.1
+    nobisect: bool = True
+    quality: bool = True
+    maxvolume: float = -1.0
+    verbose: int = 0
+
+    force_retet: bool = False
+
+
 @gs.assert_initialized
 class Morph(Options):
     """
@@ -45,7 +64,7 @@ class Morph(Options):
     """
 
     pos: tuple = (0.0, 0.0, 0.0)
-    euler: Optional[tuple] = (0.0, 0.0, 0.0)
+    euler: Optional[tuple] = None
     quat: Optional[tuple] = None
     visualization: bool = True
     collision: bool = True
@@ -66,9 +85,13 @@ class Morph(Options):
             if not isinstance(self.quat, tuple) or len(self.quat) != 4:
                 gs.raise_exception("`quat` should be a 4-tuple.")
 
+        if (self.quat is not None) and (self.euler is not None):
+            gs.raise_exception("`euler` and `quat` cannot be jointly specified.")
+
         if self.euler is not None:
-            if self.quat is None:
-                self.quat = tuple(gs.utils.geom.xyz_to_quat(np.array(self.euler), rpy=True, degrees=True))
+            self.quat = tuple(gs.utils.geom.xyz_to_quat(np.array(self.euler), rpy=True, degrees=True))
+        elif self.quat is None:
+            self.quat = (1.0, 0.0, 0.0, 0.0)
 
         if not self.visualization and not self.collision:
             gs.raise_exception("`visualization` and `collision` cannot both be False.")
@@ -126,7 +149,7 @@ class Primitive(Morph):
     fixed: bool = False
 
 
-class Box(Primitive):
+class Box(Primitive, TetGenMixin):
     """
     Morph defined by a box shape.
 
@@ -156,6 +179,22 @@ class Box(Primitive):
         Whether this morph, if created as `RigidEntity`, requires jacobian and inverse kinematics. Defaults to False. **This is only used for RigidEntity.**
     fixed : bool, optional
         Whether the baselink of the entity should be fixed. Defaults to False. **This is only used for RigidEntity.**
+    order : int, optional
+        The order of the FEM mesh. Defaults to 1. **This is only used for FEMEntity.**
+    mindihedral : int, optional
+        The minimum dihedral angle in degrees during tetraheralization. Defaults to 10. **This is only used for Volumetric Entity that requires tetraheralization.**
+    minratio : float, optional
+        The minimum tetrahedron quality ratio during tetraheralization. Defaults to 1.1. **This is only used for Volumetric Entity that requires tetraheralization.**
+    nobisect : bool, optional
+        Whether to disable bisection during tetraheralization. Defaults to True. **This is only used for Volumetric Entity that requires tetraheralization.**
+    quality : bool, optional
+        Whether to improve quality during tetraheralization. Defaults to True. **This is only used for Volumetric Entity that requires tetraheralization.**
+    maxvolume : float, optional
+        The maximum tetrahedron volume. Defaults to -1.0 (no limit). **This is only used for Volumetric Entity that requires tetraheralization.**
+    verbose : int, optional
+        The verbosity level during tetraheralization. Defaults to 0. **This is only used for Volumetric Entity that requires tetraheralization.**
+    force_retet : bool, optional
+        Whether to force re-tetraheralization. Defaults to False. **This is only used for Volumetric Entity that requires tetraheralization.**
     """
 
     lower: Optional[tuple] = None
@@ -180,7 +219,7 @@ class Box(Primitive):
                 gs.raise_exception("Invalid lower and upper corner.")
 
 
-class Cylinder(Primitive):
+class Cylinder(Primitive, TetGenMixin):
     """
     Morph defined by a cylinder shape.
 
@@ -204,13 +243,29 @@ class Cylinder(Primitive):
         Whether this morph, if created as `RigidEntity`, requires jacobian and inverse kinematics. Defaults to False. **This is only used for RigidEntity.**
     fixed : bool, optional
         Whether the baselink of the entity should be fixed. Defaults to False. **This is only used for RigidEntity.**
+    order : int, optional
+        The order of the FEM mesh. Defaults to 1. **This is only used for FEMEntity.**
+    mindihedral : int, optional
+        The minimum dihedral angle in degrees during tetraheralization. Defaults to 10. **This is only used for Volumetric Entity that requires tetraheralization.**
+    minratio : float, optional
+        The minimum tetrahedron quality ratio during tetraheralization. Defaults to 1.1. **This is only used for Volumetric Entity that requires tetraheralization.**
+    nobisect : bool, optional
+        Whether to disable bisection during tetraheralization. Defaults to True. **This is only used for Volumetric Entity that requires tetraheralization.**
+    quality : bool, optional
+        Whether to improve quality during tetraheralization. Defaults to True. **This is only used for Volumetric Entity that requires tetraheralization.**
+    maxvolume : float, optional
+        The maximum tetrahedron volume. Defaults to -1.0 (no limit). **This is only used for Volumetric Entity that requires tetraheralization.**
+    verbose : int, optional
+        The verbosity level during tetraheralization. Defaults to 0. **This is only used for Volumetric Entity that requires tetraheralization.**
+    force_retet : bool, optional
+        Whether to force re-tetraheralization. Defaults to False. **This is only used for Volumetric Entity that requires tetraheralization.**
     """
 
     height: float = 1.0
     radius: float = 0.5
 
 
-class Sphere(Primitive):
+class Sphere(Primitive, TetGenMixin):
     """
     Morph defined by a sphere shape.
 
@@ -232,6 +287,22 @@ class Sphere(Primitive):
         Whether this morph, if created as `RigidEntity`, requires jacobian and inverse kinematics. Defaults to False. **This is only used for RigidEntity.**
     fixed : bool, optional
         Whether the baselink of the entity should be fixed. Defaults to False. **This is only used for RigidEntity.**
+    order : int, optional
+        The order of the FEM mesh. Defaults to 1. **This is only used for FEMEntity.**
+    mindihedral : int, optional
+        The minimum dihedral angle in degrees during tetraheralization. Defaults to 10. **This is only used for Volumetric Entity that requires tetraheralization.**
+    minratio : float, optional
+        The minimum tetrahedron quality ratio during tetraheralization. Defaults to 1.1. **This is only used for Volumetric Entity that requires tetraheralization.**
+    nobisect : bool, optional
+        Whether to disable bisection during tetraheralization. Defaults to True. **This is only used for Volumetric Entity that requires tetraheralization.**
+    quality : bool, optional
+        Whether to improve quality during tetraheralization. Defaults to True. **This is only used for Volumetric Entity that requires tetraheralization.**
+    maxvolume : float, optional
+        The maximum tetrahedron volume. Defaults to -1.0 (no limit). **This is only used for Volumetric Entity that requires tetraheralization.**
+    verbose : int, optional
+        The verbosity level during tetraheralization. Defaults to 0. **This is only used for Volumetric Entity that requires tetraheralization.**
+    force_retet : bool, optional
+        Whether to force re-tetraheralization. Defaults to False. **This is only used for Volumetric Entity that requires tetraheralization.**
     """
 
     radius: float = 0.5
@@ -299,13 +370,13 @@ class FileMorph(Morph):
     quat : tuple, shape (4,), optional
         The quaternion (w-x-y-z convention) of the entity. If specified, `euler` will be ignored. Defaults to None.
     decimate : bool, optional
-        Whether to decimate (simplify) the mesh. If not given, it defaults to `convexify`. **This is only used for RigidEntity.**
+        Whether to decimate (simplify) the mesh. Default to True. **This is only used for RigidEntity.**
     decimate_face_num : int, optional
         The number of faces to decimate to. Defaults to 500. **This is only used for RigidEntity.**
     decimate_aggressiveness : int
         How hard the decimation process will try to match the target number of faces, as a integer ranging from 0 to 8.
         0 is losseless. 2 preserves all features of the original geometry. 5 may significantly alters the original
-        geometry if necessary. 8 does what needs to be done at all costs. Defaults to 2.
+        geometry if necessary. 8 does what needs to be done at all costs. Defaults to 5.
         **This is only used for RigidEntity.**
     convexify : bool, optional
         Whether to convexify the entity. When convexify is True, all the meshes in the entity will each be converted
@@ -335,9 +406,9 @@ class FileMorph(Morph):
 
     file: Any = ""
     scale: Union[float, tuple] = 1.0
-    decimate: Optional[bool] = None
+    decimate: bool = True
     decimate_face_num: int = 500
-    decimate_aggressiveness: int = 2
+    decimate_aggressiveness: int = 5
     convexify: Optional[bool] = None
     decompose_nonconvex: Optional[bool] = None
     decompose_object_error_threshold: float = 0.15
@@ -350,11 +421,11 @@ class FileMorph(Morph):
 
         if self.decompose_nonconvex is not None:
             if self.decompose_nonconvex:
+                # Convex decomposition is automatically disabled if convexify itself is already disabled.
                 self.convexify = True
                 self.decompose_object_error_threshold = 0.0
                 self.decompose_robot_error_threshold = 0.0
             else:
-                self.convexify = False
                 self.decompose_object_error_threshold = float("inf")
                 self.decompose_robot_error_threshold = float("inf")
             gs.logger.warning(
@@ -391,7 +462,7 @@ class FileMorph(Morph):
         return f"<gs.morphs.{self.__class__.__name__}(file='{self.file}')>"
 
 
-class Mesh(FileMorph):
+class Mesh(FileMorph, TetGenMixin):
     """
     Morph loaded from a mesh file.
 
@@ -418,7 +489,7 @@ class Mesh(FileMorph):
     decimate_aggressiveness : int
         How hard the decimation process will try to match the target number of faces, as a integer ranging from 0 to 8.
         0 is losseless. 2 preserves all features of the original geometry. 5 may significantly alters the original
-        geometry if necessary. 8 does what needs to be done at all costs. Defaults to 2.
+        geometry if necessary. 8 does what needs to be done at all costs. Defaults to 5.
         **This is only used for RigidEntity.**
     convexify : bool, optional
         Whether to convexify the entity. When convexify is True, all the meshes in the entity will each be converted
@@ -462,6 +533,8 @@ class Mesh(FileMorph):
         Whether to disable bisection during tetraheralization. Defaults to True. **This is only used for Volumetric Entity that requires tetraheralization.**
     quality : bool, optional
         Whether to improve quality during tetraheralization. Defaults to True. **This is only used for Volumetric Entity that requires tetraheralization.**
+    maxvolume : float, optional
+        The maximum tetrahedron volume. Defaults to -1.0 (no limit). **This is only used for Volumetric Entity that requires tetraheralization.**
     verbose : int, optional
         The verbosity level during tetraheralization. Defaults to 0. **This is only used for Volumetric Entity that requires tetraheralization.**
     force_retet : bool, optional
@@ -475,18 +548,6 @@ class Mesh(FileMorph):
     fixed: bool = False
     group_by_material: bool = True
     merge_submeshes_for_collision: bool = True
-
-    # FEM specific
-    order: int = 1
-
-    # Volumetric mesh entity
-    mindihedral: int = 10
-    minratio: float = 1.1
-    nobisect: bool = True
-    quality: bool = True
-    verbose: int = 0
-
-    force_retet: bool = False
 
 
 class MeshSet(Mesh):
@@ -527,7 +588,7 @@ class MJCF(FileMorph):
     decimate_aggressiveness : int
         How hard the decimation process will try to match the target number of faces, as a integer ranging from 0 to 8.
         0 is losseless. 2 preserves all features of the original geometry. 5 may significantly alters the original
-        geometry if necessary. 8 does what needs to be done at all costs. Defaults to 2.
+        geometry if necessary. 8 does what needs to be done at all costs. Defaults to 5.
         **This is only used for RigidEntity.**
     convexify : bool, optional
         Whether to convexify the entity. When convexify is True, all the meshes in the entity will each be converted
@@ -565,8 +626,23 @@ class MJCF(FileMorph):
         if not self.file.endswith(".xml"):
             gs.raise_exception(f"Expected `.xml` extension for MJCF file: {self.file}")
 
-        if isinstance(self.scale, np.ndarray) and self.scale.std() > gs.EPS:
-            gs.raise_exception("Anisotropic scaling is not supported by MJCF morph.")
+        # What you want to do with scaling is kinda "zoom" the world from the perspective of the entity, i.e. scale the
+        # geometric properties of an entity wrt its root pose. In the general case, ie for a 3D vector scale, (x, y, z)
+        # dimensions are scaled independently along (x, y, z) world axes respectively. With this definition, it is an
+        # intrinsic uniquely-defined geometric property of the entity, and as such, it does not depend on its current
+        # configuration (aka. position vector).
+        # For rigid non-articulated objects, this is all good and dimension-wise scaling makes sense, but it is no
+        # longer the case for poly-articulated robot. This is due to the fact that the position of each geometry in
+        # world frame depends on their parent link poses, which themselves depends on the current configuration of the
+        # entity. This is problematic as it means that the effect of scaling would depends on the initial configuration
+        # of the robot rather then being a intrinsic uniquely-defined geometric property. There is no another way to
+        # avoid this inconsistency than limiting scaling to a scalar factor. In this case, scaling between anisotropic
+        # and does not depends on the orientation of each geometry anymore, and therefore is independent of the
+        # configuration of the entity, which is precisely the property that we want to enforce.
+        if isinstance(self.scale, np.ndarray):
+            if self.scale.std() > gs.EPS:
+                gs.raise_exception("Anisotropic scaling is not supported by MJCF morph.")
+            self.scale = self.scale.mean()
 
 
 class URDF(FileMorph):
@@ -598,7 +674,7 @@ class URDF(FileMorph):
     decimate_aggressiveness : int
         How hard the decimation process will try to match the target number of faces, as a integer ranging from 0 to 8.
         0 is losseless. 2 preserves all features of the original geometry. 5 may significantly alters the original
-        geometry if necessary. 8 does what needs to be done at all costs. Defaults to 2.
+        geometry if necessary. 8 does what needs to be done at all costs. Defaults to 5.
         **This is only used for RigidEntity.**
     convexify : bool, optional
         Whether to convexify the entity. When convexify is True, all the meshes in the entity will each be converted
@@ -645,8 +721,11 @@ class URDF(FileMorph):
         if isinstance(self.file, str) and not self.file.endswith(".urdf"):
             gs.raise_exception(f"Expected `.urdf` extension for URDF file: {self.file}")
 
+        # Anisotropic scaling is ill-defined for poly-articulated robots. See related MJCF about this for details.
         if isinstance(self.scale, np.ndarray) and self.scale.std() > gs.EPS:
-            gs.raise_exception("Anisotropic scaling is not supported by URDF morph.")
+            if self.scale.std() > gs.EPS:
+                gs.raise_exception("Anisotropic scaling is not supported by MJCF morph.")
+            self.scale = self.scale.mean()
 
 
 class Drone(FileMorph):
@@ -676,7 +755,7 @@ class Drone(FileMorph):
     decimate_aggressiveness : int
         How hard the decimation process will try to match the target number of faces, as a integer ranging from 0 to 8.
         0 is losseless. 2 preserves all features of the original geometry. 5 may significantly alters the original
-        geometry if necessary. 8 does what needs to be done at all costs. Defaults to 2.
+        geometry if necessary. 8 does what needs to be done at all costs. Defaults to 5.
         **This is only used for RigidEntity.**
     convexify : bool, optional
         Whether to convexify the entity. When convexify is True, all the meshes in the entity will each be converted
@@ -700,8 +779,6 @@ class Drone(FileMorph):
         Whether the entity needs to be visualized. Set it to False if you need a invisible object only for collision purposes. Defaults to True. `visualization` and `collision` cannot both be False.
     collision : bool, optional
         **NB**: Drone doesn't support collision checking for now.
-    fixed : bool, optional
-        Whether the baselink of the entity should be fixed. Defaults to False.
     prioritize_urdf_material : bool, optional
         Sometimes a geom in a urdf file will be assigned a color, and the geom asset file also contains its own visual material. This parameter controls whether to prioritize the URDF-defined material over the asset's own material. Defaults to False.
     model : str, optional
@@ -714,15 +791,20 @@ class Drone(FileMorph):
         The names of the links that represent the propellers. Defaults to ['prop0_link', 'prop1_link', 'prop2_link', 'prop3_link'].
     propellers_spin : sequence of int, optional
         The spin direction of the propellers. 1: CCW, -1: CW. Defaults to [-1, 1, -1, 1].
+    merge_fixed_links : bool, optional
+        Whether to merge links connected via a fixed joint. Defaults to True.
+    links_to_keep : list of str, optional
+        A list of link names that should not be skipped during link merging. Defaults to [].
     """
 
     model: str = "CF2X"
-    fixed: bool = False
     prioritize_urdf_material: bool = False
     COM_link_name: str = "center_of_mass_link"
     propellers_link_names: Optional[Sequence[str]] = None
     propellers_link_name: Sequence[str] = ("prop0_link", "prop1_link", "prop2_link", "prop3_link")
     propellers_spin: Sequence[int] = (-1, 1, -1, 1)  # 1: CCW, -1: CW
+    merge_fixed_links: bool = True
+    links_to_keep: List[str] = []
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -733,6 +815,11 @@ class Drone(FileMorph):
                 "'propellers_link_name' instead."
             )
             self.propellers_link_name = self.propellers_link_names
+
+        # Make sure that Propellers and COM links are preserved
+        for link_name in (*self.propellers_link_name, self.COM_link_name):
+            if not link_name in self.links_to_keep:
+                self.links_to_keep.append(link_name)
 
         if isinstance(self.file, str) and not self.file.endswith(".urdf"):
             gs.raise_exception(f"Drone only supports `.urdf` extension: {self.file}")

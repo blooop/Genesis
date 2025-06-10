@@ -292,7 +292,6 @@ def orthogonals(a):
 
 @ti.func
 def imp_aref(params, neg_penetration, vel, pos):
-    # The first term in parms is the timeconst parsed from mjcf. However, we don't use it here but use the one passed in, which is 2*substep_dt.
     timeconst, dampratio, dmin, dmax, width, mid, power = params
 
     imp_x = ti.abs(neg_penetration) / width
@@ -594,12 +593,12 @@ def trans_quat_to_T(trans, quat):
         T = np.eye(4, dtype=np.result_type(trans, quat))
         if trans.ndim == 1:
             T[:3, 3] = trans
-            T[:3, :3] = Rotation.from_quat(quat, scalar_first=True).as_matrix()
+            T[:3, :3] = quat_to_R(quat)
         elif trans.ndim == 2:
             assert quat.ndim == 2
             T = np.tile(T, [trans.shape[0], 1, 1])
             T[:, :3, 3] = trans
-            T[:, :3, :3] = Rotation.from_quat(quat, scalar_first=True).as_matrix()
+            T[:, :3, :3] = quat_to_R(quat)
         else:
             gs.raise_exception(f"ndim expected to be 1 or 2, but got {trans.ndim=}")
         return T
@@ -839,6 +838,61 @@ def transform_pos_quat_by_trans_quat(pos, quat, t_trans, t_quat):
     return new_pos, new_quat
 
 
+def transform_by_T(pos, T):
+    """
+    Transforms 3D points by a 4x4 transformation matrix or a batch of matrices,
+    supporting both NumPy arrays and PyTorch tensors.
+
+    Parameters
+    ----------
+    pos: np.ndarray | torch.Tensor
+        A numpy array or torch tensor of 3D points. Can be a single point
+         (3,), a batch of points (B, 3), or a batched batch of points (B, N, 3).
+    T: np.ndarray | torch.Tensor
+        The 4x4 transformation matrix or a batch of B transformation
+        matrices of shape (B, 4, 4). Must be of the same type as `pos`.
+
+    Returns
+    -------
+        The transformed points in a shape corresponding to the input dimensions.
+    """
+    assert pos.shape[-1] == 3, "Input positions must have 3 dimensions"
+
+    if T.ndim == 2:
+        T = T.reshape(1, 4, 4)
+
+    if isinstance(pos, torch.Tensor) and isinstance(T, torch.Tensor):
+        if pos.ndim > 1:
+            ones_shape = pos.shape[:-1] + (1,)
+            pos_hom = torch.cat([pos, torch.ones(ones_shape, dtype=pos.dtype, device=pos.device)], dim=-1)
+        else:
+            pos_hom = torch.cat([pos, torch.tensor([1.0], dtype=pos.dtype, device=pos.device)])
+    elif isinstance(pos, np.ndarray) and isinstance(T, np.ndarray):
+        if pos.ndim > 1:
+            ones_shape = pos.shape[:-1] + (1,)
+            pos_hom = np.concatenate([pos, np.ones(ones_shape, dtype=pos.dtype)], axis=-1)
+        else:
+            pos_hom = np.append(pos, 1)
+    else:
+        gs.raise_exception(f"Inputs must be both torch.Tensor or both np.ndarray. Got: {type(pos)=} and {type(T)=}")
+
+    if pos_hom.ndim == 1:
+        pos_hom = pos_hom.reshape(1, 1, -1)
+    elif pos_hom.ndim == 2:
+        assert T.shape[0] == 1 or T.shape[0] == pos.shape[0], f"{T.shape}, {pos.shape}"
+        pos_hom = pos_hom.reshape(-1, 1, 4)
+
+    pos_hom_t = pos_hom.swapaxes(-1, -2)  # (..., N, 4) -> (..., 4, N)
+    transformed_hom = T @ pos_hom_t
+    transformed_hom = transformed_hom.swapaxes(-1, -2)[..., :3]
+
+    if pos.ndim == 1:
+        transformed_hom = transformed_hom.reshape(-1)
+    elif pos.ndim == 2:
+        transformed_hom = transformed_hom.reshape(-1, 3)
+    return transformed_hom
+
+
 # ------------------------------------------------------------------------------------
 # ------------------------------------- numpy ----------------------------------------
 # ------------------------------------------------------------------------------------
@@ -975,24 +1029,6 @@ def transform_by_R(pos, R):
     return new_pos
 
 
-def transform_by_T(pos, T):
-    assert pos.shape[-1] == 3
-    assert T.ndim == 2  # TODO: handle batched T
-
-    if pos.ndim == 2:
-        new_pos = np.hstack([pos, np.ones_like(pos[:, :1])]).T
-        new_pos = (T @ new_pos).T
-        new_pos = new_pos[:, :3]
-    elif pos.ndim == 1:
-        new_pos = np.append(pos, np.array(1, dtype=pos.dtype))
-        new_pos = T @ new_pos
-        new_pos = new_pos[:3]
-    else:
-        assert False
-
-    return new_pos
-
-
 def inv_transform_by_T(pos, T):
     T_inv = np.linalg.inv(T)
     return transform_by_T(pos, T_inv)
@@ -1089,81 +1125,33 @@ def nowhere():
     return np.array([2333333, 6666666, 5201314])
 
 
-def default_dofs_kp(n=6):
-    return np.tile(100.0, n).astype(gs.np_float)
-
-
-def default_dofs_kv(n=6):
-    return np.tile(10.0, n).astype(gs.np_float)
-
-
-def default_dofs_force_range(n=6):
-    # TODO: This is big enough for robot arms, but is this general?
-    return np.tile([[-100.0, 100.0]], [n, 1])
-
-
-def default_dofs_limit(n=6):
-    return np.tile([[-np.inf, np.inf]], [n, 1])
-
-
-def default_dofs_invweight(n=6):
-    return np.ones(n)
-
-
-def default_dofs_damping(n=6):
-    return np.ones(n)
-
-
-def free_dofs_damping(n=6):
-    return np.zeros(n)
-
-
-def default_dofs_motion_ang(n=6):
-    if n == 6:
-        return np.array(
-            [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
-        )
-    elif n == 0:
-        return np.zeros((0, 3))
-    else:
-        assert False
-
-
-def default_dofs_motion_vel(n=6):
-    if n == 6:
-        return np.array(
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
-        )
-    elif n == 0:
-        return np.zeros((0, 3))
-    else:
-        return False
-
-
-def default_dofs_stiffness(n=6):
-    return np.zeros(n)
-
-
-def default_solver_params(n=6, substep_dt=0.01):
+def default_solver_params():
     """
-    Default solver parameters (timeconst, dampratio, dmin, dmax, width, mid, power). Reference: https://mujoco.readthedocs.io/en/latest/modeling.html#solver-parameters
-    Note that timeconst here will not be used in the current workflow. Instead, it will be computed using 2 * substep_dt.
-    """
+    Default solver parameters (timeconst, dampratio, dmin, dmax, width, mid, power).
 
-    solver_params = np.array([2 * substep_dt, 1.0e00, 9.0e-01, 9.5e-01, 1.0e-03, 5.0e-01, 2.0e00])
-    return np.repeat(solver_params[None], n, axis=0)
+    Reference: https://mujoco.readthedocs.io/en/latest/modeling.html#solver-parameters
+    """
+    return np.array([0.0, 1.0e00, 9.0e-01, 9.5e-01, 1.0e-03, 5.0e-01, 2.0e00])
 
 
 def default_friction():
     return 1.0
 
 
+def default_dofs_damping(n=6):
+    return np.ones(n)
+
+
 def default_dofs_armature(n=6):
     return np.full(n, 0.1)
 
 
-def free_dofs_armature(n=6):
-    return np.zeros(n)
+def default_dofs_kp(n=6):
+    return np.tile(100.0, n).astype(gs.np_float)
+
+
+def default_dofs_kv(n=6):
+    return np.tile(10.0, n).astype(gs.np_float)
 
 
 @ti.data_oriented
@@ -1177,11 +1165,13 @@ class SpatialHasher:
         else:
             self.n_slots = n_slots
 
-    def build(self):
+    def build(self, n_batch):
+        self._B = n_batch
         # number of elements in each slot
-        self.slot_size = ti.field(gs.ti_int, shape=self.n_slots)
+        self.slot_size = ti.field(gs.ti_int, shape=(self.n_slots, self._B))
         # element index offset in each slot
-        self.slot_start = ti.field(gs.ti_int, shape=self.n_slots)
+        self.slot_start = ti.field(gs.ti_int, shape=(self.n_slots, self._B))
+        self.cur_cnt = ti.field(gs.ti_int, shape=self._B)
 
     @ti.func
     def compute_reordered_idx(self, n, pos, active, reordered_idx):
@@ -1200,34 +1190,28 @@ class SpatialHasher:
 
         self.slot_size.fill(0)
         self.slot_start.fill(0)
+        self.cur_cnt.fill(0)
 
-        for i in range(n):
-            if active[i]:
-                slot_idx = self.pos_to_slot(pos[i])
-                ti.atomic_add(self.slot_size[slot_idx], 1)
+        for i_n, i_b in ti.ndrange(n, self._B):
+            if active[i_n, i_b]:
+                slot_idx = self.pos_to_slot(pos[i_n, i_b])
+                ti.atomic_add(self.slot_size[slot_idx, i_b], 1)
 
-        cur_cnt = 0
-        for i in range(self.n_slots):
-            self.slot_start[i] = ti.atomic_add(cur_cnt, self.slot_size[i])
+        for i_n in range(self.n_slots):
+            for i_b in range(self._B):
+                self.slot_start[i_n, i_b] = ti.atomic_add(self.cur_cnt[i_b], self.slot_size[i_n, i_b])
 
-        for i in range(n):
-            if active[i]:
-                slot_idx = self.pos_to_slot(pos[i])
-                reordered_idx[i] = ti.atomic_add(self.slot_start[slot_idx], 1)
+        for i_n, i_b in ti.ndrange(n, self._B):
+            if active[i_n, i_b]:
+                slot_idx = self.pos_to_slot(pos[i_n, i_b])
+                reordered_idx[i_n, i_b] = ti.atomic_add(self.slot_start[slot_idx, i_b], 1)
 
         # recover slot_start
-        for i in range(self.n_slots):
-            self.slot_start[i] -= self.slot_size[i]
+        for i_s, i_b in ti.ndrange(self.n_slots, self._B):
+            self.slot_start[i_s, i_b] -= self.slot_size[i_s, i_b]
 
     @ti.func
-    def for_all_neighbors(
-        self,
-        i,
-        pos,
-        task_range,
-        ret: ti.template(),
-        task: ti.template(),
-    ):
+    def for_all_neighbors(self, i, pos, task_range, ret: ti.template(), task: ti.template(), i_b):
         """
         Iterates over all neighbors of a given position and performs a task on each neighbor.
         Elements are considered neighbors if they are within task_range.
@@ -1242,12 +1226,14 @@ class SpatialHasher:
         Returns:
             None
         """
-        base = self.pos_to_grid(pos[i])
+        base = self.pos_to_grid(pos[i, i_b])
         for offset in ti.grouped(ti.ndrange((-1, 2), (-1, 2), (-1, 2))):
             slot_idx = self.grid_to_slot(base + offset)
-            for j in range(self.slot_start[slot_idx], self.slot_size[slot_idx] + self.slot_start[slot_idx]):
-                if i != j and (pos[i] - pos[j]).norm() < task_range:
-                    task(i, j, ret)
+            for j in range(
+                self.slot_start[slot_idx, i_b], self.slot_size[slot_idx, i_b] + self.slot_start[slot_idx, i_b]
+            ):
+                if i != j and (pos[i, i_b] - pos[j, i_b]).norm() < task_range:
+                    task(i, j, ret, i_b)
 
     @ti.func
     def pos_to_grid(self, pos):

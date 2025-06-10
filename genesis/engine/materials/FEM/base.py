@@ -8,6 +8,23 @@ from ..base import Material
 
 @ti.data_oriented
 class Base(Material):
+    """
+    The base class of MPM materials.
+
+    Note
+    ----
+    This class should *not* be instantiated directly.
+
+    Parameters
+    ----------
+    E: float, optional
+        Young's modulus, which controls stiffness. Default is 1e6.
+    nu: float, optional
+        Poisson ratio, describing the material's volume change under stress. Default is 0.2.
+    rho: float, optional
+        Material density (kg/m^3). Default is 1000.
+    """
+
     def __init__(
         self,
         E=1e6,  # Young's modulus
@@ -31,26 +48,39 @@ class Base(Material):
     def update_stress(self, mu, lam, J, F, actu, m_dir):
         raise NotImplementedError
 
+    @ti.func
+    def compute_energy_gradient_hessian(self, mu, lam, J, F, actu, m_dir, i_e, i_b, hessian_field):
+        raise NotImplementedError
+
+    @ti.func
+    def compute_energy(self, mu, lam, J, F, actu, m_dir):
+        raise NotImplementedError
+
     @property
     def idx(self):
         return self._idx
 
     @property
     def E(self):
+        """Young's modulus."""
         return self._E
 
     @property
     def nu(self):
+        """Poisson ratio."""
         return self._nu
 
     @property
     def mu(self):
+        """The first Lame parameters."""
         return self._mu
 
     @property
     def lam(self):
+        """The second Lame parameters."""
         return self._lam
 
     @property
     def rho(self):
+        """The rest density."""
         return self._rho
